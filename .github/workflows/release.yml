@@ -8,10 +8,6 @@ on:
       # do not run for weekly release tags
       - "!v0.0.0-weekly*"
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to release'
-        required: true
 
 permissions:
   contents: write
@@ -42,14 +38,14 @@ jobs:
       # setup docker buildx
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+#      - name: Set up Docker Buildx
+#        uses: docker/setup-buildx-action@v2
       # login to docker hub
-      - uses: docker/login-action@v2
-        name: Login to Docker Hub
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+#      - uses: docker/login-action@v2
+#        name: Login to Docker Hub
+#        with:
+#          username: ${{ secrets.DOCKERHUB_USERNAME }}
+#          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - run: make frontend/build
       - name: Get github app token (valid for an hour)
         id: app-goreleaser
@@ -64,16 +60,17 @@ jobs:
           args: release --clean --timeout 60m
         env:
           GITHUB_TOKEN: ${{ steps.app-goreleaser.outputs.token }}
-      - name: Determine release tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "RELEASE_TAG=${{ github.event.inputs.tag }}" >> $GITHUB_ENV
-          else
-            echo "RELEASE_TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-          fi
       # make generate-formulas expects PYROSCOPE_TAG to be set
       - name: Set PYROSCOPE_TAG
-        run: echo "PYROSCOPE_TAG=${{ env.RELEASE_TAG }}" >> $GITHUB_ENV
+      - name: Set PYROSCOPE_TAG
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            git fetch --tags
+            LATEST_TAG=$(git describe --tags --abbrev=0)
+            echo "PYROSCOPE_TAG=$LATEST_TAG" >> $GITHUB_ENV
+          else
+            echo "PYROSCOPE_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+          fi
       - name: Get github app token (valid for an hour)
         id: brew-token
         uses: tibdex/github-app-token@v1
@@ -81,14 +78,14 @@ jobs:
           app_id: ${{ secrets.APP_ID }}
           private_key: ${{ secrets.APP_PRIVATE_KEY }}
           repository: pyroscope-io/homebrew-brew
-      - name: Update homebrew formulas
-        run: |
-          git config --global url."https://x-access-token:$(echo "${HOMEBREW_GITHUB_TOKEN}" | xargs)@github.com/pyroscope-io/homebrew-brew".insteadOf "https://github.com/pyroscope-io/homebrew-brew"
-          git config --global user.email "dmitry+bot@pyroscope.io"
-          git config --global user.name "Pyroscope Bot <dmitry+bot@pyroscope.io>"
-          git clone https://github.com/pyroscope-io/homebrew-brew ../homebrew-brew
-          cd ../homebrew-brew
-          make generate-formulas && git add Formula && git commit -m "chore: update formulas" && git push origin main
-        env:
-          HOMEBREW_GITHUB_TOKEN: ${{ steps.brew-token.outputs.token }}
-          GITHUB_TOKEN: ${{ steps.app-goreleaser.outputs.token }}
+#      - name: Update homebrew formulas
+#        run: |
+#          git config --global url."https://x-access-token:$(echo "${HOMEBREW_GITHUB_TOKEN}" | xargs)@github.com/pyroscope-io/homebrew-brew".insteadOf "https://github.com/pyroscope-io/homebrew-brew"
+#          git config --global user.email "dmitry+bot@pyroscope.io"
+#          git config --global user.name "Pyroscope Bot <dmitry+bot@pyroscope.io>"
+#          git clone https://github.com/pyroscope-io/homebrew-brew ../homebrew-brew
+#          cd ../homebrew-brew
+#          make generate-formulas && git add Formula && git commit -m "chore: update formulas" && git push origin main
+#        env:
+#          HOMEBREW_GITHUB_TOKEN: ${{ steps.brew-token.outputs.token }}
+#          GITHUB_TOKEN: ${{ steps.app-goreleaser.outputs.token }}
